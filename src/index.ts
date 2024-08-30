@@ -2,7 +2,9 @@ import { Client } from "@notionhq/client";
 import dotenv from "dotenv";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import { SearchResponse } from "@notionhq/client/build/src/api-endpoints";
+import { PageObjectResponse, SearchResponse } from "@notionhq/client/build/src/api-endpoints";
+import { getPageContent } from "./page";
+import * as fs from "node:fs";
 
 dotenv.config();
 
@@ -12,17 +14,24 @@ async function main() {
   });
 
   // Function to write a page to a file
-  async function writePageToFile(page: any, directory: string) {
-    const pageId = page.id.replace(/-/g, '');
-    const filePath = path.join(directory, `${pageId}.data`);
-    await writeFile(filePath, JSON.stringify(page, null, 2));
-    console.log(`Wrote page ${pageId} to ${filePath}`);
+  async function writePageToFile(page: PageObjectResponse, directory: string) {
+    const pageId = page.id;
+    const pageContent = await getPageContent(notion, pageId);
+    const fileDir = path.join(directory, pageId.toString());
+    await mkdir(fileDir, { recursive: true });
+    let title = ((page.properties?.title ?? page.properties?.Name) as any)?.title[0]?.plain_text?.trim().replaceAll(/\//g, "-");
+    if (!title) {
+      title = pageId.toString();
+    }
+    const filePath = path.join(fileDir, title + ".md");
+    fs.writeFileSync(filePath, pageContent, "utf8");
   }
 
   // Function to fetch all pages
   async function fetchAllPages() {
     let pages: any[] = [];
     let cursor: string | undefined = undefined;
+
 
     while (true) {
       const response: SearchResponse = await notion.search({
@@ -47,15 +56,22 @@ async function main() {
 
   // Fetch all pages
   const pages = await fetchAllPages();
+  let metadata: Map<string, {
+    url: string;
+  }> = new Map();
 
-  // Define the output directory
   const outputDir = path.join(process.env.WORKSPACE_DIR!!, 'knowledge', 'integrations', 'notion');
-  await mkdir(outputDir, { recursive: true }); // Ensure the directory exists
+  await mkdir(outputDir, { recursive: true });
 
-  // Write all pages to files
-  await Promise.all(
-    pages.map((page) => writePageToFile(page, outputDir))
-  );
+  for (const page of pages) {
+    await writePageToFile(page, outputDir);
+    metadata.set(page.id, {
+      url: page.url,
+    })
+  }
+
+  const metadataPath = path.join(outputDir, 'metadata.json');
+  await writeFile(metadataPath, JSON.stringify(Object.fromEntries(metadata)), 'utf8');
 
   console.log(`Finished writing ${pages.length} pages to ${outputDir}`);
 }
