@@ -58,22 +58,41 @@ async function main() {
   const pages = await fetchAllPages();
   let metadata: Map<string, {
     url: string;
+    updatedAt: string;
   }> = new Map();
-
   const outputDir = path.join(process.env.WORKSPACE_DIR!!, 'knowledge', 'integrations', 'notion');
   await mkdir(outputDir, { recursive: true });
+  const metadataPath = path.join(outputDir, 'metadata.json');
+  if (fs.existsSync(metadataPath)) {
+    metadata = new Map(Object.entries(JSON.parse(fs.readFileSync(metadataPath, 'utf8').toString())));
+  }
 
+  let updatedPages = 0;
   for (const page of pages) {
+    if (metadata.has(page.id)) {
+      if (metadata.get(page.id)!.updatedAt === page.last_edited_time) {
+        continue;
+      }
+    }
     await writePageToFile(page, outputDir);
     metadata.set(page.id, {
       url: page.url,
+      updatedAt: page.last_edited_time,
     })
+    updatedPages++
   }
 
-  const metadataPath = path.join(outputDir, 'metadata.json');
+  for (const [key, _] of metadata) {
+    if (!pages.find((page) => page.id === key)) {
+      fs.rmSync(path.join(outputDir, key), { recursive: true });
+      console.log(`Removed ${key} from ${outputDir}`);
+      metadata.delete(key);
+    }
+  }
+
   await writeFile(metadataPath, JSON.stringify(Object.fromEntries(metadata)), 'utf8');
 
-  console.log(`Finished writing ${pages.length} pages to ${outputDir}`);
+  console.log(`Finished writing ${updatedPages} pages to ${outputDir}`);
 }
 
 main()

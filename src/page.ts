@@ -142,18 +142,20 @@ function fileToString(prefix: any, file: any) {
   return result
 }
 
-async function printTable(client: Client, table: any) {
+async function printTable(client: Client, table: any): Promise<string> {
+  let result = ""
   const children = await client.blocks.children.list({block_id: table.id})
   if (table.table.has_column_header && children.results.length > 0) {
-    printTableRow((children.results[0] as any).table_row, table.table.has_row_header, true)
+    result += printTableRow((children.results[0] as any).table_row, table.table.has_row_header, true)
     for (let i = 1; i < children.results.length; i++) {
-      printTableRow((children.results[i] as any).table_row, table.table.has_row_header, false)
+      result += printTableRow((children.results[i] as any).table_row, table.table.has_row_header, false)
     }
   } else {
     for (let r of children.results) {
-      printTableRow((r as any).table_row, table.table.has_row_header, false)
+      result += printTableRow((r as any).table_row, table.table.has_row_header, false)
     }
   }
+  return result;
 }
 
 function printTableRow(row: any, boldFirst: any, boldAll: any): string {
