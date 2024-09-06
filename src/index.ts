@@ -82,7 +82,7 @@ async function main() {
   for (const page of pages) {
     if (metadata.has(page.id)) {
       const entry = metadata.get(page.id)
-      if (entry?.updatedAt === page.last_edited_time) {
+      if (entry?.updatedAt === page.last_edited_time && fs.existsSync(getPath(outputDir, page))) {
         continue;
       }
       if (entry?.sync) {
