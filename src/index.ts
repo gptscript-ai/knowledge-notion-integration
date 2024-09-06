@@ -59,6 +59,7 @@ async function main() {
   let metadata: Map<string, {
     url: string;
     updatedAt: string;
+    sync: boolean;
   }> = new Map();
   const outputDir = path.join(process.env.WORKSPACE_DIR!!, 'knowledge', 'integrations', 'notion');
   await mkdir(outputDir, { recursive: true });
@@ -70,14 +71,23 @@ async function main() {
   let updatedPages = 0;
   for (const page of pages) {
     if (metadata.has(page.id)) {
-      if (metadata.get(page.id)!.updatedAt === page.last_edited_time) {
+      const entry = metadata.get(page.id)
+      if (entry?.updatedAt === page.last_edited_time) {
         continue;
       }
+      if (entry?.sync) {
+        await writePageToFile(page, outputDir);
+      }
+      metadata.set(page.id, {
+        url: page.url,
+        updatedAt: page.last_edited_time,
+        sync: entry?.sync ?? false,
+      })
     }
-    await writePageToFile(page, outputDir);
     metadata.set(page.id, {
       url: page.url,
       updatedAt: page.last_edited_time,
+      sync: false,
     })
     updatedPages++
   }
