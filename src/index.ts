@@ -1,8 +1,11 @@
 import { Client } from "@notionhq/client";
 import dotenv from "dotenv";
-import { writeFile, mkdir } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { PageObjectResponse, SearchResponse } from "@notionhq/client/build/src/api-endpoints";
+import {
+  PageObjectResponse,
+  SearchResponse,
+} from "@notionhq/client/build/src/api-endpoints";
 import { getPageContent } from "./page";
 import * as fs from "node:fs";
 
@@ -19,12 +22,18 @@ async function main() {
     const pageContent = await getPageContent(notion, pageId);
     const fileDir = path.join(directory, pageId.toString());
     await mkdir(fileDir, { recursive: true });
+    const filePath = getPath(directory, page)
+    fs.writeFileSync(filePath, pageContent, "utf8");
+  }
+
+  function getPath(directory: string, page: PageObjectResponse): string {
+    const pageId = page.id;
+    const fileDir = path.join(directory, pageId.toString());
     let title = ((page.properties?.title ?? page.properties?.Name) as any)?.title[0]?.plain_text?.trim().replaceAll(/\//g, "-");
     if (!title) {
       title = pageId.toString();
     }
-    const filePath = path.join(fileDir, title + ".md");
-    fs.writeFileSync(filePath, pageContent, "utf8");
+    return path.join(fileDir, title + ".md");
   }
 
   // Function to fetch all pages
@@ -58,6 +67,7 @@ async function main() {
   const pages = await fetchAllPages();
   let metadata: Map<string, {
     url: string;
+    filename: string
     updatedAt: string;
     sync: boolean;
   }> = new Map();
@@ -76,20 +86,22 @@ async function main() {
         continue;
       }
       if (entry?.sync) {
+        updatedPages++
         await writePageToFile(page, outputDir);
       }
       metadata.set(page.id, {
         url: page.url,
+        filename: path.basename(getPath(outputDir, page)),
         updatedAt: page.last_edited_time,
         sync: entry?.sync ?? false,
       })
     }
     metadata.set(page.id, {
       url: page.url,
+      filename: path.basename(getPath(outputDir, page)),
       updatedAt: page.last_edited_time,
       sync: false,
     })
-    updatedPages++
   }
 
   for (const [key, _] of metadata) {
