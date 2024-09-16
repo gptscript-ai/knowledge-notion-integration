@@ -95,17 +95,18 @@ function main() {
         // Fetch all pages
         const pages = yield fetchAllPages();
         let metadata = new Map();
-        const outputDir = path_1.default.join(process.env.WORKSPACE_DIR, 'knowledge', 'integrations', 'notion');
+        const outputDir = path_1.default.join(process.env.WORKSPACE_DIR, "knowledge", "integrations", "notion");
         yield (0, promises_1.mkdir)(outputDir, { recursive: true });
-        const metadataPath = path_1.default.join(outputDir, 'metadata.json');
+        const metadataPath = path_1.default.join(outputDir, "metadata.json");
         if (fs.existsSync(metadataPath)) {
-            metadata = new Map(Object.entries(JSON.parse(fs.readFileSync(metadataPath, 'utf8').toString())));
+            metadata = new Map(Object.entries(JSON.parse(fs.readFileSync(metadataPath, "utf8").toString())));
         }
         let updatedPages = 0;
         for (const page of pages) {
             if (metadata.has(page.id)) {
                 const entry = metadata.get(page.id);
-                if ((entry === null || entry === void 0 ? void 0 : entry.updatedAt) === page.last_edited_time && fs.existsSync(getPath(outputDir, page))) {
+                if ((entry === null || entry === void 0 ? void 0 : entry.updatedAt) === page.last_edited_time &&
+                    fs.existsSync(getPath(outputDir, page))) {
                     continue;
                 }
                 if (entry === null || entry === void 0 ? void 0 : entry.sync) {
@@ -119,12 +120,14 @@ function main() {
                     sync: (_a = entry === null || entry === void 0 ? void 0 : entry.sync) !== null && _a !== void 0 ? _a : false,
                 });
             }
-            metadata.set(page.id, {
-                url: page.url,
-                filename: path_1.default.basename(getPath(outputDir, page)),
-                updatedAt: page.last_edited_time,
-                sync: false,
-            });
+            else {
+                metadata.set(page.id, {
+                    url: page.url,
+                    filename: path_1.default.basename(getPath(outputDir, page)),
+                    updatedAt: page.last_edited_time,
+                    sync: false,
+                });
+            }
         }
         for (const [key, _] of metadata) {
             if (!pages.find((page) => page.id === key)) {
@@ -133,7 +136,7 @@ function main() {
                 metadata.delete(key);
             }
         }
-        yield (0, promises_1.writeFile)(metadataPath, JSON.stringify(Object.fromEntries(metadata)), 'utf8');
+        yield (0, promises_1.writeFile)(metadataPath, JSON.stringify(Object.fromEntries(metadata)), "utf8");
         console.log(`Finished writing ${updatedPages} pages to ${outputDir}`);
     });
 }

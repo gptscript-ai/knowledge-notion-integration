@@ -22,14 +22,18 @@ async function main() {
     const pageContent = await getPageContent(notion, pageId);
     const fileDir = path.join(directory, pageId.toString());
     await mkdir(fileDir, { recursive: true });
-    const filePath = getPath(directory, page)
+    const filePath = getPath(directory, page);
     fs.writeFileSync(filePath, pageContent, "utf8");
   }
 
   function getPath(directory: string, page: PageObjectResponse): string {
     const pageId = page.id;
     const fileDir = path.join(directory, pageId.toString());
-    let title = ((page.properties?.title ?? page.properties?.Name) as any)?.title[0]?.plain_text?.trim().replaceAll(/\//g, "-");
+    let title = (
+      (page.properties?.title ?? page.properties?.Name) as any
+    )?.title[0]?.plain_text
+      ?.trim()
+      .replaceAll(/\//g, "-");
     if (!title) {
       title = pageId.toString();
     }
@@ -40,7 +44,6 @@ async function main() {
   async function fetchAllPages() {
     let pages: any[] = [];
     let cursor: string | undefined = undefined;
-
 
     while (true) {
       const response: SearchResponse = await notion.search({
@@ -65,28 +68,43 @@ async function main() {
 
   // Fetch all pages
   const pages = await fetchAllPages();
-  let metadata: Map<string, {
-    url: string;
-    filename: string
-    updatedAt: string;
-    sync: boolean;
-  }> = new Map();
-  const outputDir = path.join(process.env.WORKSPACE_DIR!!, 'knowledge', 'integrations', 'notion');
+  let metadata: Map<
+    string,
+    {
+      url: string;
+      filename: string;
+      updatedAt: string;
+      sync: boolean;
+    }
+  > = new Map();
+  const outputDir = path.join(
+    process.env.WORKSPACE_DIR!!,
+    "knowledge",
+    "integrations",
+    "notion"
+  );
   await mkdir(outputDir, { recursive: true });
-  const metadataPath = path.join(outputDir, 'metadata.json');
+  const metadataPath = path.join(outputDir, "metadata.json");
   if (fs.existsSync(metadataPath)) {
-    metadata = new Map(Object.entries(JSON.parse(fs.readFileSync(metadataPath, 'utf8').toString())));
+    metadata = new Map(
+      Object.entries(
+        JSON.parse(fs.readFileSync(metadataPath, "utf8").toString())
+      )
+    );
   }
 
   let updatedPages = 0;
   for (const page of pages) {
     if (metadata.has(page.id)) {
-      const entry = metadata.get(page.id)
-      if (entry?.updatedAt === page.last_edited_time && fs.existsSync(getPath(outputDir, page))) {
+      const entry = metadata.get(page.id);
+      if (
+        entry?.updatedAt === page.last_edited_time &&
+        fs.existsSync(getPath(outputDir, page))
+      ) {
         continue;
       }
       if (entry?.sync) {
-        updatedPages++
+        updatedPages++;
         await writePageToFile(page, outputDir);
       }
       metadata.set(page.id, {
@@ -94,14 +112,15 @@ async function main() {
         filename: path.basename(getPath(outputDir, page)),
         updatedAt: page.last_edited_time,
         sync: entry?.sync ?? false,
-      })
+      });
+    } else {
+      metadata.set(page.id, {
+        url: page.url,
+        filename: path.basename(getPath(outputDir, page)),
+        updatedAt: page.last_edited_time,
+        sync: false,
+      });
     }
-    metadata.set(page.id, {
-      url: page.url,
-      filename: path.basename(getPath(outputDir, page)),
-      updatedAt: page.last_edited_time,
-      sync: false,
-    })
   }
 
   for (const [key, _] of metadata) {
@@ -112,7 +131,11 @@ async function main() {
     }
   }
 
-  await writeFile(metadataPath, JSON.stringify(Object.fromEntries(metadata)), 'utf8');
+  await writeFile(
+    metadataPath,
+    JSON.stringify(Object.fromEntries(metadata)),
+    "utf8"
+  );
 
   console.log(`Finished writing ${updatedPages} pages to ${outputDir}`);
 }
