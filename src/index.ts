@@ -96,7 +96,7 @@ async function main() {
   const client = new Client({
     auth: process.env.NOTION_TOKEN,
   });
-  let workingDir = process.env.GPTSCRIPTS_WORKSPACE_DIR!!;
+  let workingDir = process.env.GPTSCRIPTS_WORKSPACE_DIR ?? "./";
 
   // Fetch all pages
   const pages = await fetchAllPages(client);
@@ -105,11 +105,12 @@ async function main() {
   if (fs.existsSync(metadataPath)) {
     metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8').toString());
   }
-  if (metadata.input.outputDir) {
+  if (metadata.input?.outputDir) {
     workingDir = metadata.input.outputDir
   }
 
-  if (!metadata.output.pageList) {
+  if (!metadata.output?.pageList) {
+    metadata.output = {} as OutputMetadata
     metadata.output.pageList = {}
   }
 
@@ -121,25 +122,29 @@ async function main() {
   }
   let syncedCount = 0;
   try {
-    for (const pageId of metadata.input.pages) {
-      if (pages.has(pageId)) {
-        await writePageToFile(client, pages.get(pageId)!, workingDir);
-        syncedCount++;
-        metadata.output.pageList[pageId] = {
-          url: pages.get(pageId)!.url,
-          filename: path.basename(getPath(workingDir, pages.get(pageId)!)),
-        };
+    if (metadata.input?.pages) {
+      for (const pageId of metadata.input.pages) {
+        if (pages.has(pageId)) {
+          await writePageToFile(client, pages.get(pageId)!, workingDir);
+          syncedCount++;
+          metadata.output.pageList[pageId] = {
+            url: pages.get(pageId)!.url,
+            filename: path.basename(getPath(workingDir, pages.get(pageId)!)),
+          };
+      metadata.output.status = `${syncedCount} number of pages have been synced`;
+        }
       }
     }
-    metadata.output.status = `${syncedCount} number of pages have been synced`;
   } catch (error: any) {
     metadata.output.error = error.message;
     throw error;
   } finally {
-    await writeFile(metadataPath, JSON.stringify(metadata, 'utf8'));
+    if (!metadata.output.error) {
+      metadata.output.error = '';
+      metadata.output.status = 'done';
+    }
+    await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
   }
-
-  console.log(`Finished writing ${updatedPages} pages to ${outputDir}`);
 }
 
 main()
