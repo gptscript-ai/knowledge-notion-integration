@@ -12,137 +12,126 @@ import * as fs from "node:fs";
 dotenv.config();
 
 interface Metadata {
-  input: InputMetadata
-  output: OutputMetadata
+  input: InputMetadata;
+  output: OutputMetadata;
 }
 
 interface InputMetadata {
-  pages: string[]
-  outputDir: string
+  pages: string[];
+  outputDir: string;
 }
 
 interface OutputMetadata {
   files: {
     [pageId: string]: {
       updatedAt: string;
-      filename: string;
+      filePath: string;
+      folder: string;
       url: string;
-    }
-  }
-  pageList: {
-    [pageId: string]: {
-      url: string;
-      filename: string;
-    }
-  }
-  status: string,
-  error: string
+    };
+  };
+  status: string;
+  error: string;
 }
 
 // Function to write a page to a file
-async function writePageToFile(client: Client, page: PageObjectResponse, directory: string) {
+async function writePageToFile(
+  client: Client,
+  page: PageObjectResponse,
+  directory: string
+) {
   const pageId = page.id;
   const pageContent = await getPageContent(client, pageId);
   const fileDir = path.join(directory, pageId.toString());
   await mkdir(fileDir, { recursive: true });
-  const filePath = getPath(directory, page)
+  const filePath = getPath(directory, page);
   fs.writeFileSync(filePath, pageContent, "utf8");
 }
 
 function getPath(directory: string, page: PageObjectResponse): string {
   const pageId = page.id;
   const fileDir = path.join(directory, pageId.toString());
-  let title = ((page.properties?.title ?? page.properties?.Name) as any)?.title[0]?.plain_text?.trim().replaceAll(/\//g, "-");
+  let title = (
+    (page.properties?.title ?? page.properties?.Name) as any
+  )?.title[0]?.plain_text
+    ?.trim()
+    .replaceAll(/\//g, "-");
   if (!title) {
     title = pageId.toString();
   }
   return path.join(fileDir, title + ".md");
 }
 
-// Function to fetch all pages
-async function fetchAllPages(client: Client) {
-  let pages: Map<string, PageObjectResponse> = new Map();
-  let cursor: string | undefined = undefined;
-
-
-  while (true) {
-    const response: SearchResponse = await client.search({
-      filter: {
-        property: "object",
-        value: "page",
-      },
-      start_cursor: cursor,
-    });
-
-    for (const page of response.results) {
-      if ((page as PageObjectResponse).archived) {
-        continue
-      }
-      pages.set(page.id, page as PageObjectResponse);
-    }
-
-    if (!response.has_more) {
-      break;
-    }
-
-    cursor = response.next_cursor ?? undefined;
-  }
-
-  return pages;
+async function getPage(client: Client, pageId: string) {
+  const page = await client.pages.retrieve({ page_id: pageId });
+  return page as PageObjectResponse;
 }
-
 
 async function main() {
   const client = new Client({
     auth: process.env.NOTION_TOKEN,
   });
-  let workingDir = process.env.GPTSCRIPTS_WORKSPACE_DIR ?? "./";
+  let workingDir = process.env.GPTSCRIPTS_WORKSPACE_DIR ?? process.cwd();
+  console.log("Working directory:", workingDir);
 
   // Fetch all pages
-  const pages = await fetchAllPages(client);
-  let metadata: Metadata = {} as Metadata
-  const metadataPath = path.join(workingDir, '.metadata.json');
+  let metadata: Metadata = {} as Metadata;
+  const metadataPath = path.join(workingDir, ".metadata.json");
   if (fs.existsSync(metadataPath)) {
-    metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8').toString());
+    metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8").toString());
   }
   if (metadata.input?.outputDir) {
-    workingDir = metadata.input.outputDir
+    workingDir = metadata.input.outputDir;
   }
 
-  if (!metadata.output?.pageList) {
-    metadata.output = {} as OutputMetadata
-    metadata.output.pageList = {}
+  if (!metadata.output) {
+    metadata.output = {} as OutputMetadata;
   }
 
-  for (const [pageId, page] of pages.entries()) {
-    metadata.output.pageList[pageId] = {
-      url: page.url,
-      filename: path.basename(getPath(workingDir, page)),
-    };
+  if (!metadata.output.files) {
+    metadata.output.files = {};
   }
+
   let syncedCount = 0;
+  let error: any;
   try {
     if (metadata.input?.pages) {
       for (const pageId of metadata.input.pages) {
-        if (pages.has(pageId)) {
-          await writePageToFile(client, pages.get(pageId)!, workingDir);
+        const page = await getPage(client, pageId);
+        if (
+          !metadata.output.files[pageId] ||
+          metadata.output.files[pageId].updatedAt !== page.last_edited_time
+        ) {
+          await writePageToFile(client, page, workingDir);
           syncedCount++;
-          metadata.output.pageList[pageId] = {
-            url: pages.get(pageId)!.url,
-            filename: path.basename(getPath(workingDir, pages.get(pageId)!)),
+          metadata.output.files[pageId] = {
+            url: page.url,
+            filePath: getPath(workingDir, page!),
+            updatedAt: page.last_edited_time,
+            folder: path.dirname(getPath(workingDir, page!)),
           };
-      metadata.output.status = `${syncedCount} number of pages have been synced`;
+        }
+        metadata.output.status = `${syncedCount} number of pages have been synced`;
+        await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
+      }
+    }
+    for (const [pageId, fileInfo] of Object.entries(metadata.output.files)) {
+      if (!metadata.input?.pages?.includes(pageId)) {
+        try {
+          await fs.promises.rmdir(fileInfo.folder, { recursive: true });
+          delete metadata.output.files[pageId];
+          console.log(`Deleted file and entry for page ID: ${pageId}`);
+        } catch (error) {
+          console.error(`Failed to delete file ${fileInfo.filePath}:`, error);
         }
       }
     }
-  } catch (error: any) {
-    metadata.output.error = error.message;
-    throw error;
+  } catch (err: any) {
+    error = err;
+    throw err;
   } finally {
-    if (!metadata.output.error) {
-      metadata.output.error = '';
-      metadata.output.status = 'done';
-    }
+    metadata.output.error = error?.message ?? "";
+    metadata.output.status = `done`;
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
   }
 }
