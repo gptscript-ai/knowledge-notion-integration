@@ -38,6 +38,7 @@ interface OutputMetadata {
         {
           url: string;
           title: string;
+          folderPath: string;
         }
       >;
     };
@@ -70,6 +71,18 @@ function getPath(directory: string, page: PageObjectResponse): string {
     title = pageId.toString();
   }
   return path.join(fileDir, title + ".md");
+}
+
+function getTitle(page: PageObjectResponse): string {
+  let title = (
+    (page.properties?.title ?? page.properties?.Name) as any
+  )?.title[0]?.plain_text
+    ?.trim()
+    .replaceAll(/\//g, "-");
+  if (!title) {
+    title = page.id.toString();
+  }
+  return title;
 }
 
 async function getPage(client: Client, pageId: string) {
@@ -106,14 +119,17 @@ async function main() {
   if (!metadata.output.state) {
     metadata.output.state = {} as {
       notionState: {
-        pages: Record<string, { url: string; title: string }>;
+        pages: Record<
+          string,
+          { url: string; title: string; folderPath: string }
+        >;
       };
     };
   }
 
   if (!metadata.output.state.notionState) {
     metadata.output.state.notionState = {} as {
-      pages: Record<string, { url: string; title: string }>;
+      pages: Record<string, { url: string; title: string; folderPath: string }>;
     };
   }
 
@@ -129,22 +145,30 @@ async function main() {
     });
 
     for (const page of allPages.results) {
-      const p = page as PageObjectResponse;
+      let p = page as PageObjectResponse;
       if (p.archived) {
         continue;
       }
       const pageId = p.id;
       const pageUrl = p.url;
-      const pageTitle =
-        (
-          (p.properties?.title ?? p.properties?.Name) as any
-        )?.title[0]?.plain_text
-          ?.trim()
-          .replaceAll(/\//g, "-") || pageId;
+      const pageTitle = getTitle(p);
 
+      let folderPath = "";
+      while (p.parent && p.parent.type === "page_id") {
+        try {
+          const parentPage = await getPage(client, p.parent.page_id);
+          const parentTitle = getTitle(parentPage);
+          folderPath = path.join(parentTitle, folderPath);
+          p = parentPage;
+        } catch (err: any) {
+          folderPath = "";
+          break;
+        }
+      }
       metadata.output.state.notionState.pages[pageId] = {
         url: pageUrl,
         title: pageTitle,
+        folderPath: folderPath,
       };
     }
     for (const pageId of Object.keys(metadata.output.state.notionState.pages)) {
@@ -187,8 +211,9 @@ async function main() {
         metadata.input?.exclude?.includes(pageId)
       ) {
         try {
-          await fs.promises.rmdir(path.dirname(fileInfo.filePath), {
+          await fs.rmSync(path.dirname(fileInfo.filePath), {
             recursive: true,
+            force: true,
           });
           delete metadata.output.files[pageId];
           console.log(`Deleted file and entry for page ID: ${pageId}`);
